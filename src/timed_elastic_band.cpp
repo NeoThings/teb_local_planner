@@ -247,6 +247,17 @@ void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_s
               TimeDiff(i) = newtime;
               insertPose(i+1, PoseSE2::average(Pose(i),Pose(i+1)) );
               insertTimeDiff(i+1,newtime);
+              
+              // TODO: 
+              // auto resize can intersect poses while start and goal orientation has a large diff with plan
+              // set those poses to fixed to prevent backword and a curve movement
+              // need check index prevent process poses in the middle of the trajectory
+              // code below will cause motion stop while naving need to check why
+
+              // if ((Pose(i).position() - Pose(i+1).position()).norm() < 0.01 and
+              //     std::fabs(Pose(i).theta() - Pose(i+1).theta()) > 0.3) {
+              //   setPoseVertexFixed(i+1, true);
+              // }
 
               i--; // check the updated pose diff again
               modified = true;
