@@ -397,6 +397,13 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   if (!feasible)
   {
     cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
+    
+    // anti-oscillation around goal
+    if (fabs(std::sqrt(dx*dx+dy*dy)) < 1.0) {
+      std::cout << "dist to goal when the trajectory is not feasible: " << fabs(std::sqrt(dx*dx+dy*dy)) << std::endl;
+      message = "trajectory is not feasible around goal, stay cool";
+      return mbf_msgs::ExePathResult::NO_VALID_CMD;
+    }
 
     // now we reset everything to start again with the initialization of new trajectories.
     planner_->clearPlanner();
