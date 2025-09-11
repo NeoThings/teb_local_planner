@@ -218,6 +218,10 @@ bool TebLocalPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& 
             
   // reset goal_reached_ flag
   goal_reached_ = false;
+
+  // reset start and goal interpolation flags
+  enable_start_interpolated_ = true;
+  enable_goal_interpolated_ = false;
   
   return true;
 }
@@ -357,7 +361,17 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
     
   // Now perform the actual planning
 //   bool success = planner_->plan(robot_pose_, robot_goal_, robot_vel_, cfg_.goal_tolerance.free_goal_vel); // straight line init
-  bool success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel);
+  // std::cout << "trans x: " << transformed_plan.back().pose.position.x << " y: " << transformed_plan.back().pose.position.y << std::endl;
+  // std::cout << "global x: " << global_plan_.back().pose.position.x << " y: " << global_plan_.back().pose.position.y << std::endl;
+  if (std::fabs(transformed_plan.back().pose.position.x - global_plan_.back().pose.position.x) < 0.1 and
+      std::fabs(transformed_plan.back().pose.position.y - global_plan_.back().pose.position.y < 0.1)) {
+    std::cout << "set enable goal interpolated true" << std::endl;
+    enable_goal_interpolated_ =true;     
+  }
+  bool success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel, enable_start_interpolated_, enable_goal_interpolated_);
+  if (enable_start_interpolated_) {
+    enable_start_interpolated_ = false;
+  }
   if (!success)
   {
     planner_->clearPlanner(); // force reinitialization for next time

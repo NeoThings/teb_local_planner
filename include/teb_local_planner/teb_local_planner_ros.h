@@ -446,6 +446,9 @@ private:
   // flags
   bool initialized_; //!< Keeps track about the correct initialization of this class
 
+  // flags
+  bool enable_start_interpolated_, enable_goal_interpolated_;
+
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };

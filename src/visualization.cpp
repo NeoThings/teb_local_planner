@@ -64,6 +64,7 @@ void TebVisualization::initialize(ros::NodeHandle& nh, const TebConfig& cfg)
   global_plan_pub_ = nh.advertise<nav_msgs::Path>("global_plan", 1);
   local_plan_pub_ = nh.advertise<nav_msgs::Path>("local_plan",1);
   teb_poses_pub_ = nh.advertise<geometry_msgs::PoseArray>("teb_poses", 100);
+  init_poses_pub_ = nh.advertise<geometry_msgs::PoseArray>("initilized_teb_poses", 100);
   teb_marker_pub_ = nh.advertise<visualization_msgs::Marker>("teb_markers", 1000);
   feedback_pub_ = nh.advertise<teb_local_planner::FeedbackMsg>("teb_feedback", 10);  
   
@@ -117,7 +118,28 @@ void TebVisualization::publishLocalPlanAndPoses(const TimedElasticBand& teb) con
     teb_poses_pub_.publish(teb_poses);
 }
 
-
+void TebVisualization::publishInitPoses(const TimedElasticBand& teb) const
+{
+  if ( printErrorWhenNotInitialized() )
+    return;
+   
+    // create pose_array (along trajectory)
+    geometry_msgs::PoseArray teb_poses;
+    teb_poses.header.frame_id = cfg_->map_frame;
+    teb_poses.header.stamp = ros::Time::now();
+    
+    // fill path msgs with teb configurations
+    for (int i=0; i < teb.sizePoses(); i++)
+    {
+      geometry_msgs::PoseStamped pose;
+      pose.pose.position.x = teb.Pose(i).x();
+      pose.pose.position.y = teb.Pose(i).y();
+      pose.pose.position.z = cfg_->hcp.visualize_with_time_as_z_axis_scale*teb.getSumOfTimeDiffsUpToIdx(i);
+      pose.pose.orientation = tf::createQuaternionMsgFromYaw(teb.Pose(i).theta());
+      teb_poses.poses.push_back(pose.pose);
+    }
+    init_poses_pub_.publish(teb_poses);
+}
 
 void TebVisualization::publishRobotFootprintModel(const PoseSE2& current_pose, const BaseRobotFootprintModel& robot_model,
                                                   const std::string& ns, const std_msgs::ColorRGBA &color)

@@ -97,6 +97,8 @@ public:
    * @return \c true if planning was successful, \c false otherwise
    */
   virtual bool plan(const std::vector<geometry_msgs::PoseStamped>& initial_plan, const geometry_msgs::Twist* start_vel = NULL, bool free_goal_vel=false) = 0;
+  virtual bool plan(const std::vector<geometry_msgs::PoseStamped>& initial_plan, const geometry_msgs::Twist* start_vel = NULL, bool free_goal_vel=false, 
+                    bool enable_start_interpolation=false, bool enable_goal_interpolation=false) { return false; }
   
   /**
    * @brief Plan a trajectory between a given start and goal pose (tf::Pose version).
