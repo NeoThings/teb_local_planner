@@ -308,6 +308,7 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
       visualization_->publishInitPoses(teb_);
     }
   }
+
   if (start_vel)
     setVelocityStart(*start_vel);
   if (free_goal_vel)
@@ -316,7 +317,13 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
     vel_goal_.first = true; // we just reactivate and use the previously set velocity (should be zero if nothing was modified)
   
   // now optimize
-  return optimizeTEB(cfg_->optim.no_inner_iterations, cfg_->optim.no_outer_iterations);
+  if (optimizeTEB(cfg_->optim.no_inner_iterations, cfg_->optim.no_outer_iterations)) {
+    teb_.repositionTEB();
+    return true;
+  } else {
+    return false;
+  }
+
 }
 
 
@@ -1152,6 +1159,7 @@ void TebOptimalPlanner::extractVelocity(const PoseSE2& pose1, const PoseSE2& pos
     // translational velocity
     double dir = deltaS.dot(conf1dir);
     vx = (double) g2o::sign(dir) * deltaS.norm()/dt;
+    // std::cout << "extract vel with delta norm: " << deltaS.norm() << " dt: " << dt << std::endl;
     vy = 0;
   }
   else // holonomic robot

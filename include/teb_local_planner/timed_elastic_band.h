@@ -342,6 +342,8 @@ public:
    * @param number number of elements that should be deleted
    */
   void deleteTimeDiffs(int index, int number);
+
+  bool isBehind(double dx, double dy, double theta);
   
   //@}
   
@@ -475,7 +477,7 @@ public:
    * @param min_samples Specify the minimum number of samples that should at least remain in the trajectory
    */  
   void updateAndPruneTEB(boost::optional<const PoseSE2&> new_start, boost::optional<const PoseSE2&> new_goal, int min_samples = 3);
-  
+  void repositionTEB();
   
   /**
    * @brief Resize the trajectory by removing or inserting a (pose,dt) pair depending on a reference temporal resolution.

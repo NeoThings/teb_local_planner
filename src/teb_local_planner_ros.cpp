@@ -222,10 +222,12 @@ bool TebLocalPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& 
   // reset start and goal interpolation flags
   enable_start_interpolated_ = true;
   enable_goal_interpolated_ = false;
+
+  // reset robot max_vel
+  cfg_.robot.max_vel_x = 0.8;
   
   return true;
 }
-
 
 bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
 {
@@ -272,6 +274,10 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   // prune global plan to cut off parts of the past (spatially before the robot)
   pruneGlobalPlan(*tf_, robot_pose, global_plan_, cfg_.trajectory.global_plan_prune_distance);
 
+  if (global_plan_.size() < 80) {
+    cfg_.robot.max_vel_x = std::min(0.8, std::max(0.1, global_plan_.size() * 0.05 * 0.2));
+  }
+
   // Transform global plan to the frame of interest (w.r.t. the local costmap)
   std::vector<geometry_msgs::PoseStamped> transformed_plan;
   int goal_idx;
@@ -297,8 +303,11 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   double dx = global_goal.pose.position.x - robot_pose_.x();
   double dy = global_goal.pose.position.y - robot_pose_.y();
   double delta_orient = g2o::normalize_theta( tf2::getYaw(global_goal.pose.orientation) - robot_pose_.theta() );
-  if(fabs(std::sqrt(dx*dx+dy*dy)) < cfg_.goal_tolerance.xy_goal_tolerance
-    && fabs(delta_orient) < cfg_.goal_tolerance.yaw_goal_tolerance
+  double dist_to_goal = fabs(std::sqrt(dx*dx+dy*dy));
+  double yaw_to_goal = fabs(delta_orient);
+  // std::cout << "dist to goal: " << dist_to_goal << " yaw to goal: " << yaw_to_goal << std::endl;
+  if(dist_to_goal < cfg_.goal_tolerance.xy_goal_tolerance
+    && yaw_to_goal < cfg_.goal_tolerance.yaw_goal_tolerance
     && (!cfg_.goal_tolerance.complete_global_plan || via_points_.size() == 0)
     && (base_local_planner::stopped(base_odom, cfg_.goal_tolerance.theta_stopped_vel, cfg_.goal_tolerance.trans_stopped_vel)
         || cfg_.goal_tolerance.free_goal_vel))
@@ -360,13 +369,16 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   boost::mutex::scoped_lock cfg_lock(cfg_.configMutex());
     
   // Now perform the actual planning
-//   bool success = planner_->plan(robot_pose_, robot_goal_, robot_vel_, cfg_.goal_tolerance.free_goal_vel); // straight line init
-  // std::cout << "trans x: " << transformed_plan.back().pose.position.x << " y: " << transformed_plan.back().pose.position.y << std::endl;
-  // std::cout << "global x: " << global_plan_.back().pose.position.x << " y: " << global_plan_.back().pose.position.y << std::endl;
-  if (std::fabs(transformed_plan.back().pose.position.x - global_plan_.back().pose.position.x) < 0.1 and
-      std::fabs(transformed_plan.back().pose.position.y - global_plan_.back().pose.position.y < 0.1)) {
-    std::cout << "set enable goal interpolated true" << std::endl;
-    enable_goal_interpolated_ =true;     
+  // bool success = planner_->plan(robot_pose_, robot_goal_, robot_vel_, cfg_.goal_tolerance.free_goal_vel); // straight line init
+  
+  // check if transformed plan reach the global goal
+  double dx_to_goal = transformed_plan.back().pose.position.x - global_plan_.back().pose.position.x;
+  double dy_to_goal = transformed_plan.back().pose.position.y - global_plan_.back().pose.position.y;
+  double transformed_end_to_goal = std::sqrt(dx_to_goal*dx_to_goal + dy_to_goal*dx_to_goal);
+  // std::cout << "distance from trans end pose to goal pose: " << std::sqrt(dx_to_goal*dx_to_goal + dy_to_goal*dx_to_goal) << std::endl;
+  if (transformed_end_to_goal < 0.15 and !enable_goal_interpolated_) {
+    std::cout << "Enable goal interpolation" << std::endl;
+    enable_goal_interpolated_ =true;
   }
   bool success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel, enable_start_interpolated_, enable_goal_interpolated_);
   if (enable_start_interpolated_) {
@@ -466,6 +478,12 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
       message = "teb_local_planner steering angle is not finite";
       return mbf_msgs::ExePathResult::NO_VALID_CMD;
     }
+  }
+
+  // just eliminate negative linear velocity
+  if (cmd_vel.twist.linear.x < 0.0) {
+    //std::cout << "negative linear velocity: " << cmd_vel.twist.linear.x << std::endl;
+    cmd_vel.twist.linear.x = 0.0;
   }
   
   // a feasible solution should be found, reset counter

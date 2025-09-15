@@ -154,6 +154,10 @@ void TimedElasticBand::deletePose(int index)
 void TimedElasticBand::deletePoses(int index, int number)
 {
   ROS_ASSERT(index+number<=(int)pose_vec_.size());
+  if (pose_vec_.size() == index+number) {
+    ROS_WARN("delelte num: %d reach to pose vec limit", number);
+    return;
+  }
   for (int i = index; i<index+number; ++i)
     delete pose_vec_.at(i);
   pose_vec_.erase(pose_vec_.begin()+index, pose_vec_.begin()+index+number);
@@ -169,6 +173,10 @@ void TimedElasticBand::deleteTimeDiff(int index)
 void TimedElasticBand::deleteTimeDiffs(int index, int number)
 {
   ROS_ASSERT(index+number<=timediff_vec_.size());
+  if (timediff_vec_.size() < index+number) {
+    ROS_WARN("delelte num: %d out of time vec limit", number);
+    return;
+  }
   for (int i = index; i<index+number; ++i)
     delete timediff_vec_.at(i);
   timediff_vec_.erase(timediff_vec_.begin()+index, timediff_vec_.begin()+index+number);
@@ -672,6 +680,34 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
   }
 };
 
+// TODO: need to consider control look ahead point
+void TimedElasticBand::repositionTEB() {
+  if (sizePoses()>=2){ 
+    double dx = pose_vec_[1]->position().x() - pose_vec_[0]->position().x();
+    double dy = pose_vec_[1]->position().y() - pose_vec_[0]->position().y();
+    if (isBehind(dx, dy, pose_vec_[0]->theta()) && std::sqrt(dx*dx + dy*dy) > 0.025) {
+      // std::cout << "detected the next pose behind" << std::endl;
+      for (int i = 1; i < pose_vec_.size(); ++i) {
+        dx = pose_vec_[i]->position().x() - pose_vec_[0]->position().x();
+        dy = pose_vec_[i]->position().y() - pose_vec_[0]->position().y();
+        if (isBehind(dx, dy, pose_vec_[0]->theta())) {
+          // std::cout << "pose: " << i << " is behind the robot pose with: " << std::sqrt(dx*dx + dy*dy) << std::endl;
+          pose_vec_[i]->position().x() = pose_vec_[0]->position().x();
+          pose_vec_[i]->position().y() = pose_vec_[0]->position().y();
+        } else {
+          return;
+        }
+      }
+    }
+  }
+}
+
+// dx = p1.x - p0.x; dy = p1.y - p0.y; theta = p0.theta
+bool TimedElasticBand::isBehind(double dx, double dy, double theta) {
+  double angle_pos_diff = atan2(dy, dx);
+  double angle_diff = g2o::normalize_theta(angle_pos_diff - theta);
+  return std::fabs(angle_diff) > M_PI/2;
+}
 
 bool TimedElasticBand::isTrajectoryInsideRegion(double radius, double max_dist_behind_robot, int skip_poses)
 {
