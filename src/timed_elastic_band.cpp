@@ -154,8 +154,9 @@ void TimedElasticBand::deletePose(int index)
 void TimedElasticBand::deletePoses(int index, int number)
 {
   ROS_ASSERT(index+number<=(int)pose_vec_.size());
+  // set min_sample less than 3 error may occur without return sentence
   if (pose_vec_.size() == index+number) {
-    ROS_WARN("delelte num: %d reach to pose vec limit", number);
+    ROS_WARN("delete num: %d reach to pose vec limit", number);
     return;
   }
   for (int i = index; i<index+number; ++i)
@@ -173,8 +174,9 @@ void TimedElasticBand::deleteTimeDiff(int index)
 void TimedElasticBand::deleteTimeDiffs(int index, int number)
 {
   ROS_ASSERT(index+number<=timediff_vec_.size());
+  // set min_sample less than 3 error may occur without return sentence
   if (timediff_vec_.size() < index+number) {
-    ROS_WARN("delelte num: %d out of time vec limit", number);
+    ROS_WARN("delete num: %d out of time vec limit", number);
     return;
   }
   for (int i = index; i<index+number; ++i)
@@ -255,17 +257,6 @@ void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_s
               TimeDiff(i) = newtime;
               insertPose(i+1, PoseSE2::average(Pose(i),Pose(i+1)) );
               insertTimeDiff(i+1,newtime);
-              
-              // TODO: 
-              // auto resize can intersect poses while start and goal orientation has a large diff with plan
-              // set those poses to fixed to prevent backword and a curve movement
-              // need check index prevent process poses in the middle of the trajectory
-              // code below will cause motion stop while naving need to check why
-
-              // if ((Pose(i).position() - Pose(i+1).position()).norm() < 0.01 and
-              //     std::fabs(Pose(i).theta() - Pose(i+1).theta()) > 0.3) {
-              //   setPoseVertexFixed(i+1, true);
-              // }
 
               i--; // check the updated pose diff again
               modified = true;
@@ -426,6 +417,7 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
     bool fix_first;
     if (enable_start_interpolation) {
       std::vector<geometry_msgs::PoseStamped> interpolated_poses;
+      // std::cout << "start interpolation with plan size: " << plan.size() << std::endl;
       double heading_yaw = std::atan2(plan[2].pose.position.y - plan[1].pose.position.y, 
                                       plan[2].pose.position.x - plan[1].pose.position.x);
       double yaw_diff = g2o::normalize_theta(BackPose().theta() - heading_yaw);
@@ -441,6 +433,7 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
           tf2::convert(q, interpolated_pose.pose.orientation);
           interpolated_poses.push_back(interpolated_pose);
       }
+      std::cout << "start interpolation poses num: " << interpolated_poses.size() << std::endl;
       for (auto& p : interpolated_poses) {
           PoseSE2 interpolated_pose(p.pose.position.x, p.pose.position.y, tf::getYaw(p.pose.orientation));
           double dt = estimateDeltaT(BackPose(), interpolated_pose, max_vel_x, max_vel_theta);
@@ -492,13 +485,14 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
 
     // Insert poses before goal pose
     if (enable_goal_interpolation) {
-      std::cout << "execute goal interpolation" << std::endl;
+      // std::cout << "goal interpolation with plan size: " << plan.size() << std::endl;
+      // std::cout << "execute goal interpolation" << std::endl;
       std::vector<geometry_msgs::PoseStamped> interpolated_poses;
       double heading_yaw = std::atan2(plan[plan.size() - 1].pose.position.y - plan[plan.size() - 2].pose.position.y, 
                                       plan[plan.size() - 1].pose.position.x - plan[plan.size() - 2].pose.position.x);
       double yaw_diff = g2o::normalize_theta(goal.theta() - heading_yaw);
-      std::cout << "goal heading yaw: " << heading_yaw << "goal theta: " << goal.theta() << std::endl;
-      std::cout << "yaw diff: " << yaw_diff << std::endl;
+      // std::cout << "goal heading yaw: " << heading_yaw << "goal theta: " << goal.theta() << std::endl;
+      // std::cout << "yaw diff: " << yaw_diff << std::endl;
       int steps = std::max(1, static_cast<int>(std::ceil(std::fabs(yaw_diff) / (M_PI / 6.0))));
       for (int i = 1; i < steps; ++i) {
           double t = static_cast<double>(i) / steps;

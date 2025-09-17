@@ -445,9 +445,11 @@ private:
     
   // flags
   bool initialized_; //!< Keeps track about the correct initialization of this class
+  
+  // disable backward moving if there is no sensor coverage
+  bool disable_backward_;
 
-  // flags
-  bool enable_start_interpolated_, enable_goal_interpolated_;
+  // bool enable_start_interpolated_, enable_goal_interpolated_;
 
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW

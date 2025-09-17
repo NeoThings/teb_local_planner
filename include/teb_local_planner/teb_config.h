@@ -91,6 +91,9 @@ public:
     double min_resolution_collision_check_angular; //! Min angular resolution used during the costmap collision check. If not respected, intermediate samples are added. [rad]
     int control_look_ahead_poses; //! Index of the pose used to extract the velocity command
     int prevent_look_ahead_poses_near_goal; //! Prevents control_look_ahead_poses to look within this many poses of the goal in order to prevent overshoot & oscillation when xy_goal_tolerance is very small
+    bool in_place_turn_to_start; //!< Perform an in-place rotation to align with the path's extension direction
+    bool in_place_turn_to_goal; //!< Perform an in-place rotation to align with the goal's direction
+    bool disable_backwards; //!< Disable backwards driving if there is no sensor coverage
   } trajectory; //!< Trajectory related parameters
 
   //! Robot related parameters
@@ -271,6 +274,9 @@ public:
     trajectory.min_resolution_collision_check_angular = M_PI;
     trajectory.control_look_ahead_poses = 1;
     trajectory.prevent_look_ahead_poses_near_goal = 0;
+    trajectory.in_place_turn_to_start = false;
+    trajectory.in_place_turn_to_goal = false;
+    trajectory.disable_backwards = false;
 
     // Robot
 

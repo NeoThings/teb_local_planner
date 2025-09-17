@@ -245,12 +245,23 @@ void TebOptimalPlanner::setVelocityGoal(const geometry_msgs::Twist& vel_goal)
 }
 
 bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& initial_plan, const geometry_msgs::Twist* start_vel, bool free_goal_vel)
-{    
+{ 
+  /*
+  * *It would more precisely to pass enable start and goal interpolation from plan interface
+  * *Enable start and goal interpolation once when a setplan was called
+  * *Enable goal interpolation once when transformed plan's last pose closest to global plan's last pose
+  */
   ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
   if (!teb_.isInit())
   {
+    if (cfg_->trajectory.in_place_turn_to_start) {
+      std::cout << "Enable Start interpolation on startup" << std::endl;
+    }
+    if (cfg_->trajectory.in_place_turn_to_goal) {
+      std::cout << "Enable Goal interpolation on startup" << std::endl;
+    }
     teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
-      cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
+      cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion, cfg_->trajectory.in_place_turn_to_start, cfg_->trajectory.in_place_turn_to_goal);
     visualization_->publishInitPoses(teb_);
   }
   else // warm start
@@ -263,10 +274,13 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
       teb_.updateAndPruneTEB(start_, goal_, cfg_->trajectory.min_samples); // update TEB
     else // goal too far away -> reinit
     {
+      if (cfg_->trajectory.in_place_turn_to_goal) {
+        std::cout << "Enable Goal interpolation while runing (warm start)" << std::endl;
+      }
       ROS_DEBUG("New goal: distance to existing goal is higher than the specified threshold. Reinitalizing trajectories.");
       teb_.clearTimedElasticBand();
       teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
-        cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
+        cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion, false, cfg_->trajectory.in_place_turn_to_goal);
       visualization_->publishInitPoses(teb_);
     }
   }
@@ -278,53 +292,58 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
     vel_goal_.first = true; // we just reactivate and use the previously set velocity (should be zero if nothing was modified)
   
   // now optimize
-  return optimizeTEB(cfg_->optim.no_inner_iterations, cfg_->optim.no_outer_iterations);
-}
+  // return optimizeTEB(cfg_->optim.no_inner_iterations, cfg_->optim.no_outer_iterations);
 
-bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& initial_plan, const geometry_msgs::Twist* start_vel, bool free_goal_vel,
-                             bool enable_start_interpolation, bool enable_goal_interpolation)
-{    
-  ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
-  if (!teb_.isInit())
-  {
-    teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
-      cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion, enable_start_interpolation, enable_goal_interpolation);
-    visualization_->publishInitPoses(teb_);
-  }
-  else // warm start
-  {
-    PoseSE2 start_(initial_plan.front().pose);
-    PoseSE2 goal_(initial_plan.back().pose);
-    if (teb_.sizePoses()>0
-        && (goal_.position() - teb_.BackPose().position()).norm() < cfg_->trajectory.force_reinit_new_goal_dist
-        && fabs(g2o::normalize_theta(goal_.theta() - teb_.BackPose().theta())) < cfg_->trajectory.force_reinit_new_goal_angular) // actual warm start!
-      teb_.updateAndPruneTEB(start_, goal_, cfg_->trajectory.min_samples); // update TEB
-    else // goal too far away -> reinit
-    {
-      ROS_DEBUG("New goal: distance to existing goal is higher than the specified threshold. Reinitalizing trajectories.");
-      teb_.clearTimedElasticBand();
-      teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
-        cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion, enable_start_interpolation, enable_goal_interpolation);
-      visualization_->publishInitPoses(teb_);
-    }
-  }
-
-  if (start_vel)
-    setVelocityStart(*start_vel);
-  if (free_goal_vel)
-    setVelocityGoalFree();
-  else
-    vel_goal_.first = true; // we just reactivate and use the previously set velocity (should be zero if nothing was modified)
-  
   // now optimize
-  if (optimizeTEB(cfg_->optim.no_inner_iterations, cfg_->optim.no_outer_iterations)) {
+  double success = optimizeTEB(cfg_->optim.no_inner_iterations, cfg_->optim.no_outer_iterations);
+  if (success && cfg_->trajectory.disable_backwards) {
     teb_.repositionTEB();
-    return true;
-  } else {
-    return false;
   }
-
+  return success;
 }
+
+// bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& initial_plan, const geometry_msgs::Twist* start_vel, bool free_goal_vel,
+//                              bool enable_start_interpolation, bool enable_goal_interpolation)
+// {  
+//   ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
+//   if (!teb_.isInit())
+//   {
+//     teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
+//       cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion, enable_start_interpolation, enable_goal_interpolation);
+//     visualization_->publishInitPoses(teb_);
+//   }
+//   else // warm start
+//   {
+//     PoseSE2 start_(initial_plan.front().pose);
+//     PoseSE2 goal_(initial_plan.back().pose);
+//     if (teb_.sizePoses()>0
+//         && (goal_.position() - teb_.BackPose().position()).norm() < cfg_->trajectory.force_reinit_new_goal_dist
+//         && fabs(g2o::normalize_theta(goal_.theta() - teb_.BackPose().theta())) < cfg_->trajectory.force_reinit_new_goal_angular) // actual warm start!
+//       teb_.updateAndPruneTEB(start_, goal_, cfg_->trajectory.min_samples); // update TEB
+//     else // goal too far away -> reinit
+//     {
+//       ROS_DEBUG("New goal: distance to existing goal is higher than the specified threshold. Reinitalizing trajectories.");
+//       teb_.clearTimedElasticBand();
+//       teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
+//         cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion, , enable_goal_interpolation);
+//       visualization_->publishInitPoses(teb_);
+//     }
+//   }
+
+//   if (start_vel)
+//     setVelocityStart(*start_vel);
+//   if (free_goal_vel)
+//     setVelocityGoalFree();
+//   else
+//     vel_goal_.first = true; // we just reactivate and use the previously set velocity (should be zero if nothing was modified)
+  
+//   // now optimize
+//   double success = optimizeTEB(cfg_->optim.no_inner_iterations, cfg_->optim.no_outer_iterations);
+//   if (success && cfg_->trajectory.disable_backwards) {
+//     teb_.repositionTEB();
+//   }
+//   return success;
+// }
 
 
 bool TebOptimalPlanner::plan(const tf::Pose& start, const tf::Pose& goal, const geometry_msgs::Twist* start_vel, bool free_goal_vel)

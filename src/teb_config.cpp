@@ -70,6 +70,9 @@ void TebConfig::loadRosParamFromNodeHandle(const ros::NodeHandle& nh)
   nh.param("min_resolution_collision_check_angular", trajectory.min_resolution_collision_check_angular, trajectory.min_resolution_collision_check_angular);
   nh.param("control_look_ahead_poses", trajectory.control_look_ahead_poses, trajectory.control_look_ahead_poses);
   nh.param("prevent_look_ahead_poses_near_goal", trajectory.prevent_look_ahead_poses_near_goal, trajectory.prevent_look_ahead_poses_near_goal);
+  nh.param("in_place_turn_to_start", trajectory.in_place_turn_to_start, trajectory.in_place_turn_to_start);
+  nh.param("in_place_turn_to_goal", trajectory.in_place_turn_to_goal, trajectory.in_place_turn_to_goal);
+  nh.param("disable_backwards", trajectory.disable_backwards, trajectory.disable_backwards);
   
   // Robot
   nh.param("max_vel_x", robot.max_vel_x, robot.max_vel_x);
@@ -203,6 +206,9 @@ void TebConfig::reconfigure(TebLocalPlannerReconfigureConfig& cfg)
   trajectory.publish_feedback = cfg.publish_feedback;
   trajectory.control_look_ahead_poses = cfg.control_look_ahead_poses;
   trajectory.prevent_look_ahead_poses_near_goal = cfg.prevent_look_ahead_poses_near_goal;
+  trajectory.in_place_turn_to_start = cfg.in_place_turn_to_start;
+  trajectory.in_place_turn_to_goal = cfg.in_place_turn_to_goal;
+  trajectory.disable_backwards = cfg.disable_backwards;
   
   // Robot     
   robot.max_vel_x = cfg.max_vel_x;

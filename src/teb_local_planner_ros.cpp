@@ -218,10 +218,12 @@ bool TebLocalPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& 
             
   // reset goal_reached_ flag
   goal_reached_ = false;
+  
+  ROS_INFO("TEB got global plan with %zu poses ", global_plan_.size());
 
-  // reset start and goal interpolation flags
-  enable_start_interpolated_ = true;
-  enable_goal_interpolated_ = false;
+  // // reset start and goal interpolation flags
+  // enable_start_interpolated_ = true;
+  // enable_goal_interpolated_ = false;
 
   // reset robot max_vel
   cfg_.robot.max_vel_x = 0.8;
@@ -273,9 +275,12 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   
   // prune global plan to cut off parts of the past (spatially before the robot)
   pruneGlobalPlan(*tf_, robot_pose, global_plan_, cfg_.trajectory.global_plan_prune_distance);
-
-  if (global_plan_.size() < 80) {
-    cfg_.robot.max_vel_x = std::min(0.8, std::max(0.1, global_plan_.size() * 0.05 * 0.2));
+  
+  // global plan resolution should be setted as 0.05;
+  double terminal_velocity_limitation = 0.1;
+  int decelerate_limit = std::ceil(cfg_.robot.max_vel_x / 0.05 / 0.2);
+  if (global_plan_.size() < decelerate_limit) {
+    cfg_.robot.max_vel_x = std::min(cfg_.robot.max_vel_x, std::max(terminal_velocity_limitation, global_plan_.size() * 0.05 * 0.2));
   }
 
   // Transform global plan to the frame of interest (w.r.t. the local costmap)
@@ -371,19 +376,28 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   // Now perform the actual planning
   // bool success = planner_->plan(robot_pose_, robot_goal_, robot_vel_, cfg_.goal_tolerance.free_goal_vel); // straight line init
   
-  // check if transformed plan reach the global goal
-  double dx_to_goal = transformed_plan.back().pose.position.x - global_plan_.back().pose.position.x;
-  double dy_to_goal = transformed_plan.back().pose.position.y - global_plan_.back().pose.position.y;
-  double transformed_end_to_goal = std::sqrt(dx_to_goal*dx_to_goal + dy_to_goal*dx_to_goal);
-  // std::cout << "distance from trans end pose to goal pose: " << std::sqrt(dx_to_goal*dx_to_goal + dy_to_goal*dx_to_goal) << std::endl;
-  if (transformed_end_to_goal < 0.15 and !enable_goal_interpolated_) {
-    std::cout << "Enable goal interpolation" << std::endl;
-    enable_goal_interpolated_ =true;
-  }
-  bool success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel, enable_start_interpolated_, enable_goal_interpolated_);
-  if (enable_start_interpolated_) {
-    enable_start_interpolated_ = false;
-  }
+  // bool success;
+  // if (!cfg_.trajectory.disable_backwards) {
+  //   success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel);
+  // } else {
+  //   // check if transformed plan reach the global goal
+  //   double goal_interpolation_tolerance = 0.15;
+  //   double dx_to_goal = transformed_plan.back().pose.position.x - global_plan_.back().pose.position.x;
+  //   double dy_to_goal = transformed_plan.back().pose.position.y - global_plan_.back().pose.position.y;
+  //   double transformed_end_to_goal = std::sqrt(dx_to_goal*dx_to_goal + dy_to_goal*dx_to_goal);
+  //   // std::cout << "distance from trans end pose to goal pose: " << std::sqrt(dx_to_goal*dx_to_goal + dy_to_goal*dx_to_goal) << std::endl;
+  //   if (transformed_end_to_goal < goal_interpolation_tolerance and !enable_goal_interpolated_) {
+  //     std::cout << "Enable goal interpolation" << std::endl;
+  //     enable_goal_interpolated_ =true;
+  //   }
+  //   success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel, enable_start_interpolated_, enable_goal_interpolated_);
+  //   if (enable_start_interpolated_) {
+  //     enable_start_interpolated_ = false;
+  //   }
+  // }
+
+  bool success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel);
+
   if (!success)
   {
     planner_->clearPlanner(); // force reinitialization for next time
@@ -425,7 +439,8 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
     cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
     
     // anti-oscillation around goal
-    if (fabs(std::sqrt(dx*dx+dy*dy)) < 1.0) {
+    double terminal_distance_tolerance = 1.0;
+    if (fabs(std::sqrt(dx*dx+dy*dy)) < terminal_distance_tolerance) {
       std::cout << "dist to goal when the trajectory is not feasible: " << fabs(std::sqrt(dx*dx+dy*dy)) << std::endl;
       message = "trajectory is not feasible around goal, stay cool";
       return mbf_msgs::ExePathResult::NO_VALID_CMD;
@@ -480,15 +495,17 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
     }
   }
 
-  // just eliminate negative linear velocity
-  if (cmd_vel.twist.linear.x < 0.0) {
-    //std::cout << "negative linear velocity: " << cmd_vel.twist.linear.x << std::endl;
-    cmd_vel.twist.linear.x = 0.0;
-  }
-  
   // a feasible solution should be found, reset counter
   no_infeasible_plans_ = 0;
   
+  if (cfg_.trajectory.disable_backwards) {
+    // just eliminate negative linear velocity
+    if (cmd_vel.twist.linear.x < 0.0) {
+      //std::cout << "negative linear velocity: " << cmd_vel.twist.linear.x << std::endl;
+      cmd_vel.twist.linear.x = 0.0;
+    }
+  }
+
   // store last command (for recovery analysis etc.)
   last_cmd_ = cmd_vel.twist;
   
