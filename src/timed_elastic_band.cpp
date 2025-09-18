@@ -397,7 +397,7 @@ bool TimedElasticBand::initTrajectoryToGoal(const PoseSE2& start, const PoseSE2&
 
 
 bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::PoseStamped>& plan, double max_vel_x, double max_vel_theta, bool estimate_orient, 
-                                            int min_samples, bool guess_backwards_motion, bool enable_start_interpolation, bool enable_goal_interpolation)
+                                            int min_samples, bool guess_backwards_motion)
 {
   
   if (!isInit())
@@ -412,38 +412,6 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
     if (guess_backwards_motion && (goal.position()-start.position()).dot(start.orientationUnitVec()) < 0) // check if the goal is behind the start pose (w.r.t. start orientation)
         backwards = true;
     // TODO: dt ~ max_vel_x_backwards for backwards motions
-
-    // Insert poses after start pose
-    bool fix_first;
-    if (enable_start_interpolation) {
-      std::vector<geometry_msgs::PoseStamped> interpolated_poses;
-      // std::cout << "start interpolation with plan size: " << plan.size() << std::endl;
-      double heading_yaw = std::atan2(plan[2].pose.position.y - plan[1].pose.position.y, 
-                                      plan[2].pose.position.x - plan[1].pose.position.x);
-      double yaw_diff = g2o::normalize_theta(BackPose().theta() - heading_yaw);
-      int steps = std::max(1, static_cast<int>(std::ceil(std::fabs(yaw_diff) / (M_PI / 6.0))));
-      for (int i = 1; i < steps; ++i) {
-          double t = static_cast<double>(i) / steps;
-          double interpolated_yaw = BackPose().theta() + t * yaw_diff;
-          geometry_msgs::PoseStamped interpolated_pose;
-          interpolated_pose.pose.position.x = BackPose().position().x();
-          interpolated_pose.pose.position.y = BackPose().position().y();
-          tf2::Quaternion q;
-          q.setRPY(0.0, 0.0, interpolated_yaw);
-          tf2::convert(q, interpolated_pose.pose.orientation);
-          interpolated_poses.push_back(interpolated_pose);
-      }
-      std::cout << "start interpolation poses num: " << interpolated_poses.size() << std::endl;
-      for (auto& p : interpolated_poses) {
-          PoseSE2 interpolated_pose(p.pose.position.x, p.pose.position.y, tf::getYaw(p.pose.orientation));
-          double dt = estimateDeltaT(BackPose(), interpolated_pose, max_vel_x, max_vel_theta);
-          addPoseAndTimeDiff(interpolated_pose, dt);
-          setPoseVertexFixed(sizePoses()-1,true);
-      }
-      fix_first = false;
-    } else {
-      fix_first = true;
-    }
     
     for (int i=1; i<(int)plan.size()-1; ++i)
     {
@@ -464,10 +432,6 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
         PoseSE2 intermediate_pose(plan[i].pose.position.x, plan[i].pose.position.y, yaw);
         double dt = estimateDeltaT(BackPose(), intermediate_pose, max_vel_x, max_vel_theta);
         addPoseAndTimeDiff(intermediate_pose, dt);
-        if (!fix_first) {
-          setPoseVertexFixed(sizePoses()-1,true);
-          fix_first = true;
-        }
     }
     
     // if number of samples is not larger than min_samples, insert manually
@@ -480,37 +444,6 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
         PoseSE2 intermediate_pose = PoseSE2::average(BackPose(), goal);
         double dt = estimateDeltaT(BackPose(), intermediate_pose, max_vel_x, max_vel_theta);
         addPoseAndTimeDiff( intermediate_pose, dt ); // let the optimier correct the timestep (TODO: better initialization
-      }
-    }
-
-    // Insert poses before goal pose
-    if (enable_goal_interpolation) {
-      // std::cout << "goal interpolation with plan size: " << plan.size() << std::endl;
-      // std::cout << "execute goal interpolation" << std::endl;
-      std::vector<geometry_msgs::PoseStamped> interpolated_poses;
-      double heading_yaw = std::atan2(plan[plan.size() - 1].pose.position.y - plan[plan.size() - 2].pose.position.y, 
-                                      plan[plan.size() - 1].pose.position.x - plan[plan.size() - 2].pose.position.x);
-      double yaw_diff = g2o::normalize_theta(goal.theta() - heading_yaw);
-      // std::cout << "goal heading yaw: " << heading_yaw << "goal theta: " << goal.theta() << std::endl;
-      // std::cout << "yaw diff: " << yaw_diff << std::endl;
-      int steps = std::max(1, static_cast<int>(std::ceil(std::fabs(yaw_diff) / (M_PI / 6.0))));
-      for (int i = 1; i < steps; ++i) {
-          double t = static_cast<double>(i) / steps;
-          double interpolated_yaw = heading_yaw + t * yaw_diff;
-          geometry_msgs::PoseStamped interpolated_pose;
-          interpolated_pose.pose.position.x = goal.position().x();
-          interpolated_pose.pose.position.y = goal.position().y();
-          tf2::Quaternion q;
-          q.setRPY(0.0, 0.0, interpolated_yaw);
-          tf2::convert(q, interpolated_pose.pose.orientation);
-          interpolated_poses.push_back(interpolated_pose);
-      }
-      std::cout << "goal interpolation poses num: " << interpolated_poses.size() << std::endl;
-      for (auto& p : interpolated_poses) {
-          PoseSE2 interpolated_pose(p.pose.position.x, p.pose.position.y, tf::getYaw(p.pose.orientation));
-          double dt = estimateDeltaT(BackPose(), interpolated_pose, max_vel_x, max_vel_theta);
-          addPoseAndTimeDiff(interpolated_pose, dt);
-          setPoseVertexFixed(sizePoses()-1,true);
       }
     }
 

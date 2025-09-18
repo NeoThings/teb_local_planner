@@ -428,7 +428,7 @@ public:
    * @return true if everything was fine, false otherwise
    */
   bool initTrajectoryToGoal(const std::vector<geometry_msgs::PoseStamped>& plan, double max_vel_x, double max_vel_theta, bool estimate_orient=false, 
-                            int min_samples = 3, bool guess_backwards_motion = false, bool enable_start_interpolation=false, bool enable_goal_interpolation=false);
+                            int min_samples = 3, bool guess_backwards_motion = false);
 
 
   ROS_DEPRECATED bool initTEBtoGoal(const PoseSE2& start, const PoseSE2& goal, double diststep=0, double timestep=1, int min_samples = 3, bool guess_backwards_motion = false)

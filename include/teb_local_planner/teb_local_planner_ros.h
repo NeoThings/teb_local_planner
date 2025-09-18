@@ -387,11 +387,10 @@ protected:
    */
   void validateFootprints(double opt_inscribed_radius, double costmap_inscribed_radius, double min_obst_dist);
   
-  
   void configureBackupModes(std::vector<geometry_msgs::PoseStamped>& transformed_plan,  int& goal_idx);
 
+  double calculateDirectionAngle(const geometry_msgs::PoseStamped& p_tail, const geometry_msgs::PoseStamped& p_head);
 
-  
 private:
   // Definition of member variables
 
@@ -410,6 +409,7 @@ private:
   FailureDetector failure_detector_; //!< Detect if the robot got stucked
   
   std::vector<geometry_msgs::PoseStamped> global_plan_; //!< Store the current global plan
+  std::queue<std::vector<geometry_msgs::PoseStamped>> global_plan_buffer_; //!< Store the current global plan with start and goal ratation poses
   
   base_local_planner::OdometryHelperRos odom_helper_; //!< Provides an interface to receive the current velocity from the robot
   
@@ -445,11 +445,6 @@ private:
     
   // flags
   bool initialized_; //!< Keeps track about the correct initialization of this class
-  
-  // disable backward moving if there is no sensor coverage
-  bool disable_backward_;
-
-  // bool enable_start_interpolated_, enable_goal_interpolated_;
 
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW

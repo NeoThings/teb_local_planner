@@ -208,25 +208,54 @@ bool TebLocalPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& 
     ROS_ERROR("teb_local_planner has not been initialized, please call initialize() before using this planner");
     return false;
   }
+  
+  int orig_plan_size = orig_global_plan.size();
+  ROS_INFO("TEB got origin global plan with %d poses ", orig_plan_size);
 
   // store the global plan
+  std::queue<std::vector<geometry_msgs::PoseStamped>> empty_buffer;
   global_plan_.clear();
-  global_plan_ = orig_global_plan;
+  global_plan_buffer_.swap(empty_buffer); // clear buffer
+  //global_plan_ = orig_global_plan;
+
+  if (cfg_.trajectory.in_place_turn_to_start && orig_plan_size != 0) {
+    geometry_msgs::PoseStamped robot_pose;
+    costmap_ros_->getRobotPose(robot_pose);
+    double current_yaw = tf::getYaw(robot_pose.pose.orientation);
+    double start_yaw = tf::getYaw(orig_global_plan[0].pose.orientation);
+    double yaw_diff = std::fabs(g2o::normalize_theta(current_yaw - start_yaw));
+    std::cout << "yaw diff between current and start: " << yaw_diff << std::endl;
+    if (yaw_diff > 2.0 * cfg_.goal_tolerance.yaw_goal_tolerance) {
+      std::cout << "insert initial rotation" << std::endl;
+      std::vector<geometry_msgs::PoseStamped> plan(1, orig_global_plan[0]);
+      global_plan_buffer_.push(plan);
+    }
+  }
+
+  global_plan_buffer_.push(orig_global_plan);
+
+  if (cfg_.trajectory.in_place_turn_to_goal && orig_plan_size >= 2) {
+    double path_yaw = tf::getYaw(orig_global_plan[orig_plan_size - 2].pose.orientation);
+    double goal_yaw = tf::getYaw(orig_global_plan[orig_plan_size - 1].pose.orientation);
+    double yaw_diff = std::fabs(g2o::normalize_theta(path_yaw - goal_yaw));
+    std::cout << "yaw diff between goal and path_yaw: " << yaw_diff << std::endl;
+    if (yaw_diff > 2.0 * cfg_.goal_tolerance.yaw_goal_tolerance) {
+      global_plan_buffer_.back().back().pose.orientation = orig_global_plan[orig_plan_size - 2].pose.orientation;
+      std::cout << "insert terminal rotation" << std::endl;
+      std::vector<geometry_msgs::PoseStamped> plan(1, orig_global_plan[orig_plan_size - 1]);
+      global_plan_buffer_.push(plan);
+    }
+  }
+
+  std::cout << "got global plan buffer size: " << global_plan_buffer_.size() << std::endl;
+  global_plan_ = global_plan_buffer_.front();
+  global_plan_buffer_.pop();
 
   // we do not clear the local planner here, since setPlan is called frequently whenever the global planner updates the plan.
   // the local planner checks whether it is required to reinitialize the trajectory or not within each velocity computation step.  
             
   // reset goal_reached_ flag
   goal_reached_ = false;
-  
-  ROS_INFO("TEB got global plan with %zu poses ", global_plan_.size());
-
-  // // reset start and goal interpolation flags
-  // enable_start_interpolated_ = true;
-  // enable_goal_interpolated_ = false;
-
-  // reset robot max_vel
-  cfg_.robot.max_vel_x = 0.8;
   
   return true;
 }
@@ -276,13 +305,6 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   // prune global plan to cut off parts of the past (spatially before the robot)
   pruneGlobalPlan(*tf_, robot_pose, global_plan_, cfg_.trajectory.global_plan_prune_distance);
   
-  // global plan resolution should be setted as 0.05;
-  double terminal_velocity_limitation = 0.1;
-  int decelerate_limit = std::ceil(cfg_.robot.max_vel_x / 0.05 / 0.2);
-  if (global_plan_.size() < decelerate_limit) {
-    cfg_.robot.max_vel_x = std::min(cfg_.robot.max_vel_x, std::max(terminal_velocity_limitation, global_plan_.size() * 0.05 * 0.2));
-  }
-
   // Transform global plan to the frame of interest (w.r.t. the local costmap)
   std::vector<geometry_msgs::PoseStamped> transformed_plan;
   int goal_idx;
@@ -317,14 +339,19 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
     && (base_local_planner::stopped(base_odom, cfg_.goal_tolerance.theta_stopped_vel, cfg_.goal_tolerance.trans_stopped_vel)
         || cfg_.goal_tolerance.free_goal_vel))
   {
-    goal_reached_ = true;
-    return mbf_msgs::ExePathResult::SUCCESS;
+    if (!global_plan_buffer_.empty()) {
+      global_plan_ = global_plan_buffer_.front();
+      std::cout << "load a new global plan with: " << global_plan_.size() << " poses" << std::endl;
+      global_plan_buffer_.pop();
+    } else {
+      goal_reached_ = true;
+      return mbf_msgs::ExePathResult::SUCCESS;
+    }
   }
 
   // check if we should enter any backup mode and apply settings
   configureBackupModes(transformed_plan, goal_idx);
   
-    
   // Return false if the transformed global plan is empty
   if (transformed_plan.empty())
   {
@@ -374,28 +401,6 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   boost::mutex::scoped_lock cfg_lock(cfg_.configMutex());
     
   // Now perform the actual planning
-  // bool success = planner_->plan(robot_pose_, robot_goal_, robot_vel_, cfg_.goal_tolerance.free_goal_vel); // straight line init
-  
-  // bool success;
-  // if (!cfg_.trajectory.disable_backwards) {
-  //   success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel);
-  // } else {
-  //   // check if transformed plan reach the global goal
-  //   double goal_interpolation_tolerance = 0.15;
-  //   double dx_to_goal = transformed_plan.back().pose.position.x - global_plan_.back().pose.position.x;
-  //   double dy_to_goal = transformed_plan.back().pose.position.y - global_plan_.back().pose.position.y;
-  //   double transformed_end_to_goal = std::sqrt(dx_to_goal*dx_to_goal + dy_to_goal*dx_to_goal);
-  //   // std::cout << "distance from trans end pose to goal pose: " << std::sqrt(dx_to_goal*dx_to_goal + dy_to_goal*dx_to_goal) << std::endl;
-  //   if (transformed_end_to_goal < goal_interpolation_tolerance and !enable_goal_interpolated_) {
-  //     std::cout << "Enable goal interpolation" << std::endl;
-  //     enable_goal_interpolated_ =true;
-  //   }
-  //   success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel, enable_start_interpolated_, enable_goal_interpolated_);
-  //   if (enable_start_interpolated_) {
-  //     enable_start_interpolated_ = false;
-  //   }
-  // }
-
   bool success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel);
 
   if (!success)
@@ -498,13 +503,13 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   // a feasible solution should be found, reset counter
   no_infeasible_plans_ = 0;
   
-  if (cfg_.trajectory.disable_backwards) {
-    // just eliminate negative linear velocity
-    if (cmd_vel.twist.linear.x < 0.0) {
-      //std::cout << "negative linear velocity: " << cmd_vel.twist.linear.x << std::endl;
-      cmd_vel.twist.linear.x = 0.0;
-    }
-  }
+  // if (cfg_.trajectory.disable_backwards) {
+  //   // just eliminate negative linear velocity
+  //   if (cmd_vel.twist.linear.x < 0.0) {
+  //     //std::cout << "negative linear velocity: " << cmd_vel.twist.linear.x << std::endl;
+  //     cmd_vel.twist.linear.x = 0.0;
+  //   }
+  // }
 
   // store last command (for recovery analysis etc.)
   last_cmd_ = cmd_vel.twist;
@@ -1270,6 +1275,10 @@ double TebLocalPlannerROS::getNumberFromXMLRPC(XmlRpc::XmlRpcValue& value, const
      throw std::runtime_error("Values in the footprint specification must be numbers");
    }
    return value.getType() == XmlRpc::XmlRpcValue::TypeInt ? (int)(value) : (double)(value);
+}
+
+double TebLocalPlannerROS::calculateDirectionAngle(const geometry_msgs::PoseStamped& p_tail, const geometry_msgs::PoseStamped& p_head) {
+  return std::atan2(p_head.pose.position.y - p_tail.pose.position.y, p_head.pose.position.x - p_tail.pose.position.x);
 }
 
 } // end namespace teb_local_planner
