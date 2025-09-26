@@ -612,18 +612,57 @@ void TimedElasticBand::repositionTEB() {
   if (sizePoses()>=2){ 
     double dx = pose_vec_[1]->position().x() - pose_vec_[0]->position().x();
     double dy = pose_vec_[1]->position().y() - pose_vec_[0]->position().y();
+    int counter = 1;
     if (isBehind(dx, dy, pose_vec_[0]->theta()) && std::sqrt(dx*dx + dy*dy) > 0.025) {
       // std::cout << "detected the next pose behind" << std::endl;
       for (int i = 1; i < pose_vec_.size(); ++i) {
         dx = pose_vec_[i]->position().x() - pose_vec_[0]->position().x();
         dy = pose_vec_[i]->position().y() - pose_vec_[0]->position().y();
         if (isBehind(dx, dy, pose_vec_[0]->theta())) {
-          // std::cout << "pose: " << i << " is behind the robot pose with: " << std::sqrt(dx*dx + dy*dy) << std::endl;
+          counter++;
           pose_vec_[i]->position().x() = pose_vec_[0]->position().x();
           pose_vec_[i]->position().y() = pose_vec_[0]->position().y();
         } else {
+          int idx = 2;
+          double yaw_cache = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[1]->theta()));
+          for (int j = 2; j < counter; ++j) {
+            double yaw = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[j]->theta()));
+            if (yaw > yaw_cache) {
+              yaw_cache = yaw;
+              idx = j + 1;
+            }
+          }
+          std::cout << "repositioned " << counter << " poses to the robot pose" << std::endl;
+          std::cout << "idx: " << idx << std::endl;
+          if (idx > 2) {
+            deletePoses(1, idx - 2);
+            deleteTimeDiffs(1, idx - 2);
+          }
+          if(idx < counter) {
+            deletePoses(2, counter - idx);
+            deleteTimeDiffs(2, counter - idx);
+          }
           return;
         }
+      }
+      int idx = 2;
+      double yaw_cache = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[1]->theta()));
+      for (int j = 2; j < counter; ++j) {
+        double yaw = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[j]->theta()));
+        if (yaw > yaw_cache) {
+          yaw_cache = yaw;
+          idx = j + 1;
+        }
+      }
+      std::cout << "(to the end)repositioned " << counter << " poses to the robot pose" << std::endl;
+      std::cout << "idx: " << idx << std::endl;
+      if (idx > 2) {
+        deletePoses(1, idx - 2);
+        deleteTimeDiffs(1, idx - 2);
+      }
+      if(idx < counter) {
+        deletePoses(2, counter - idx);
+        deleteTimeDiffs(2, counter - idx);
       }
     }
   }

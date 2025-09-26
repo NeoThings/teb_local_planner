@@ -333,7 +333,7 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   double dist_to_goal = fabs(std::sqrt(dx*dx+dy*dy));
   double yaw_to_goal = fabs(delta_orient);
   // std::cout << "dist to goal: " << dist_to_goal << " yaw to goal: " << yaw_to_goal << std::endl;
-  if(dist_to_goal < cfg_.goal_tolerance.xy_goal_tolerance
+  if((dist_to_goal < cfg_.goal_tolerance.xy_goal_tolerance || global_plan_.size() ==  1)
     && yaw_to_goal < cfg_.goal_tolerance.yaw_goal_tolerance
     && (!cfg_.goal_tolerance.complete_global_plan || via_points_.size() == 0)
     && (base_local_planner::stopped(base_odom, cfg_.goal_tolerance.theta_stopped_vel, cfg_.goal_tolerance.trans_stopped_vel)
@@ -503,13 +503,13 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   // a feasible solution should be found, reset counter
   no_infeasible_plans_ = 0;
   
-  // if (cfg_.trajectory.disable_backwards) {
-  //   // just eliminate negative linear velocity
-  //   if (cmd_vel.twist.linear.x < 0.0) {
-  //     //std::cout << "negative linear velocity: " << cmd_vel.twist.linear.x << std::endl;
-  //     cmd_vel.twist.linear.x = 0.0;
-  //   }
-  // }
+  if (cfg_.trajectory.disable_backwards) {
+    // just eliminate negative linear velocity
+    if (cmd_vel.twist.linear.x < 0.0) {
+      //std::cout << "negative linear velocity: " << cmd_vel.twist.linear.x << std::endl;
+      cmd_vel.twist.linear.x = 0.0;
+    }
+  }
 
   // store last command (for recovery analysis etc.)
   last_cmd_ = cmd_vel.twist;
