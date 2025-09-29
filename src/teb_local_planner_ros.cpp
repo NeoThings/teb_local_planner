@@ -162,7 +162,7 @@ void TebLocalPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costm
     
     // Get footprint of the robot and minimum and maximum distance from the center of the robot to its footprint vertices.
     footprint_spec_ = costmap_ros_->getRobotFootprint();
-    costmap_2d::calculateMinAndMaxDistances(footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius);    
+    costmap_2d::calculateMinAndMaxDistances(footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius);
     
     // init the odom helper to receive the robot's velocity from odom messages
     odom_helper_.setOdomTopic(cfg_.odom_topic);
@@ -396,7 +396,24 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   // also consider custom obstacles (must be called after other updates, since the container is not cleared)
   updateObstacleContainerWithCustomObstacles();
   
-    
+  double min_obs_dist = std::numeric_limits<double>::max();
+  for (auto& obs : obstacles_) {
+    double dist = obs->getMinimumDistance(robot_pose_.position());
+    if (dist < min_obs_dist) {
+      min_obs_dist = dist;
+    }
+  }
+  double min_free_dist = min_obs_dist - robot_inscribed_radius_;
+  //std::cout << "minimum free distance: " << min_free_dist  << std::endl;
+  if (min_free_dist > 0.0 && min_free_dist < 1.0) {
+    int molecular = std::ceil(min_free_dist / 0.1);
+    double rate = static_cast<double>(molecular / 10.0);
+    rate = rate >= 0.25 ? rate : 0.25;
+    //std::cout << "speed discount rate: " << rate  << std::endl;
+    cfg_.autoChangeParameters(rate);
+    //std::cout << "max vel x " << cfg_.robot.max_vel_x  << std::endl;
+  }
+
   // Do not allow config changes during the following optimization step
   boost::mutex::scoped_lock cfg_lock(cfg_.configMutex());
     
