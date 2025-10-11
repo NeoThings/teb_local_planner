@@ -237,6 +237,8 @@ public:
     double max_linear_acc;
     double max_angular_vel;
     double max_angular_acc;
+    int control_poses;
+    int feasibility_poses;
   } auto_params;
 
   /**

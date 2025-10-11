@@ -343,7 +343,10 @@ public:
    */
   void deleteTimeDiffs(int index, int number);
 
-  bool isBehind(double dx, double dy, double theta);
+  // calculate angular difference between current pose orientation and velocity(by differential of two poses) vector
+  double currentOrientationToTransVectorDiff(double dx, double dy, double theta);
+
+  bool deleteToAndFroPoses(int counter);
   
   //@}
   
@@ -477,7 +480,8 @@ public:
    * @param min_samples Specify the minimum number of samples that should at least remain in the trajectory
    */  
   void updateAndPruneTEB(boost::optional<const PoseSE2&> new_start, boost::optional<const PoseSE2&> new_goal, int min_samples = 3);
-  void repositionTEB();
+  
+  bool editTEB();
   
   /**
    * @brief Resize the trajectory by removing or inserting a (pose,dt) pair depending on a reference temporal resolution.

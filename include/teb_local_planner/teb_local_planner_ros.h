@@ -177,6 +177,7 @@ public:
     */
   bool cancel() { return false; };
 
+  bool needReplan();
 
   /** @name Public utility functions/methods */
   //@{
@@ -445,6 +446,10 @@ private:
     
   // flags
   bool initialized_; //!< Keeps track about the correct initialization of this class
+
+  bool need_replan_; //!< Set to true if the local planner need a new global plan
+
+  double last_decelerate_rate_;
 
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW

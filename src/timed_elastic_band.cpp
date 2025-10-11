@@ -156,7 +156,7 @@ void TimedElasticBand::deletePoses(int index, int number)
   ROS_ASSERT(index+number<=(int)pose_vec_.size());
   // set min_sample less than 3 error may occur without return sentence
   if (pose_vec_.size() == index+number) {
-    ROS_WARN("delete num: %d reach to pose vec limit", number);
+    ROS_WARN("delete num(%d), reached to pose vec limit, current pose vec size: %d", number, (int)pose_vec_.size());
     return;
   }
   for (int i = index; i<index+number; ++i)
@@ -176,7 +176,7 @@ void TimedElasticBand::deleteTimeDiffs(int index, int number)
   ROS_ASSERT(index+number<=timediff_vec_.size());
   // set min_sample less than 3 error may occur without return sentence
   if (timediff_vec_.size() < index+number) {
-    ROS_WARN("delete num: %d out of time vec limit", number);
+    ROS_WARN("delete num(%d), reached to time vec limit, current time vec size: %d", number, (int)timediff_vec_.size());
     return;
   }
   for (int i = index; i<index+number; ++i)
@@ -567,7 +567,6 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
 {
   // first and simple approach: change only start confs (and virtual start conf for inital velocity)
   // TEST if optimizer can handle this "hard" placement
-
   if (new_start && sizePoses()>0)
   {    
     // find nearest state (using l2-norm) in order to prune the trajectory
@@ -575,7 +574,6 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
     double dist_cache = (new_start->position()- Pose(0).position()).norm();
     double dist;
     int lookahead = std::min<int>( sizePoses()-min_samples, 10); // satisfy min_samples, otherwise max 10 samples
-
     int nearest_idx = 0;
     for (int i = 1; i<=lookahead; ++i)
     {
@@ -587,7 +585,6 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
       }
       else break;
     }
-    
     // prune trajectory at the beginning (and extrapolate sequences at the end if the horizon is fixed)
     if (nearest_idx>0)
     {
@@ -596,84 +593,14 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
       deletePoses(1, nearest_idx);  // delete first states such that the closest state is the new first one
       deleteTimeDiffs(1, nearest_idx); // delete corresponding time differences
     }
-    
     // update start
     Pose(0) = *new_start;
   }
-  
   if (new_goal && sizePoses()>0)
   {
     BackPose() = *new_goal;
   }
 };
-
-// TODO: need to consider control look ahead point
-void TimedElasticBand::repositionTEB() {
-  if (sizePoses()>=2){ 
-    double dx = pose_vec_[1]->position().x() - pose_vec_[0]->position().x();
-    double dy = pose_vec_[1]->position().y() - pose_vec_[0]->position().y();
-    int counter = 1;
-    if (isBehind(dx, dy, pose_vec_[0]->theta()) && std::sqrt(dx*dx + dy*dy) > 0.025) {
-      // std::cout << "detected the next pose behind" << std::endl;
-      for (int i = 1; i < pose_vec_.size(); ++i) {
-        dx = pose_vec_[i]->position().x() - pose_vec_[0]->position().x();
-        dy = pose_vec_[i]->position().y() - pose_vec_[0]->position().y();
-        if (isBehind(dx, dy, pose_vec_[0]->theta())) {
-          counter++;
-          pose_vec_[i]->position().x() = pose_vec_[0]->position().x();
-          pose_vec_[i]->position().y() = pose_vec_[0]->position().y();
-        } else {
-          int idx = 2;
-          double yaw_cache = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[1]->theta()));
-          for (int j = 2; j < counter; ++j) {
-            double yaw = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[j]->theta()));
-            if (yaw > yaw_cache) {
-              yaw_cache = yaw;
-              idx = j + 1;
-            }
-          }
-          std::cout << "repositioned " << counter << " poses to the robot pose" << std::endl;
-          std::cout << "idx: " << idx << std::endl;
-          if (idx > 2) {
-            deletePoses(1, idx - 2);
-            deleteTimeDiffs(1, idx - 2);
-          }
-          if(idx < counter) {
-            deletePoses(2, counter - idx);
-            deleteTimeDiffs(2, counter - idx);
-          }
-          return;
-        }
-      }
-      int idx = 2;
-      double yaw_cache = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[1]->theta()));
-      for (int j = 2; j < counter; ++j) {
-        double yaw = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[j]->theta()));
-        if (yaw > yaw_cache) {
-          yaw_cache = yaw;
-          idx = j + 1;
-        }
-      }
-      std::cout << "(to the end)repositioned " << counter << " poses to the robot pose" << std::endl;
-      std::cout << "idx: " << idx << std::endl;
-      if (idx > 2) {
-        deletePoses(1, idx - 2);
-        deleteTimeDiffs(1, idx - 2);
-      }
-      if(idx < counter) {
-        deletePoses(2, counter - idx);
-        deleteTimeDiffs(2, counter - idx);
-      }
-    }
-  }
-}
-
-// dx = p1.x - p0.x; dy = p1.y - p0.y; theta = p0.theta
-bool TimedElasticBand::isBehind(double dx, double dy, double theta) {
-  double angle_pos_diff = atan2(dy, dx);
-  double angle_diff = g2o::normalize_theta(angle_pos_diff - theta);
-  return std::fabs(angle_diff) > M_PI/2;
-}
 
 bool TimedElasticBand::isTrajectoryInsideRegion(double radius, double max_dist_behind_robot, int skip_poses)
 {
@@ -706,7 +633,67 @@ bool TimedElasticBand::isTrajectoryInsideRegion(double radius, double max_dist_b
     return true;
 }
 
+bool TimedElasticBand::editTEB() {
+  if (sizePoses()>=2){ 
+    double dx = pose_vec_[1]->position().x() - pose_vec_[0]->position().x();
+    double dy = pose_vec_[1]->position().y() - pose_vec_[0]->position().y();
+    int counter = 0;
+    auto last_pose = pose_vec_[1];
+    if (currentOrientationToTransVectorDiff(dx, dy, pose_vec_[0]->theta()) > M_PI/2.0 && std::sqrt(dx*dx + dy*dy) > 0.025) {
+      // std::cout << "detected the next pose behind" << std::endl;
+      for (int i = 1; i < pose_vec_.size(); ++i) {
+        dx = pose_vec_[i]->position().x() - pose_vec_[0]->position().x();
+        dy = pose_vec_[i]->position().y() - pose_vec_[0]->position().y();
+        // edit the trajectory
+        if (currentOrientationToTransVectorDiff(dx, dy, pose_vec_[0]->theta()) > M_PI/2.0) {
+          counter++; // counter = i
+          pose_vec_[i]->position().x() = pose_vec_[0]->position().x();
+          pose_vec_[i]->position().y() = pose_vec_[0]->position().y();
+        } else {
+          std::cout << "repositioned " << counter << " poses to the robot pose" << std::endl;
+          return deleteToAndFroPoses(counter);
+        }
+      }
+      std::cout << "all the rest of poses are behind, " << "repositioned " << counter << " poses to the robot pose" << std::endl;
+      return deleteToAndFroPoses(counter);
+    }
+    return true;
+  }
+}
 
+bool TimedElasticBand::deleteToAndFroPoses(int counter) {
+  int idx = 1; // max yaw diff idx
+  double yaw_cache = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[1]->theta())); // cache the max yaw diff
+  // find the max yaw diff pose
+  for (int j = 2; j <= counter; ++j) {
+    double yaw = std::abs(g2o::normalize_theta(pose_vec_[0]->theta() - pose_vec_[j]->theta()));
+    if (yaw > yaw_cache) {
+      yaw_cache = yaw;
+      idx = j;
+    }
+  }
+  std::cout << "max yaw diff idx: " << idx << " max yaw diff: " << yaw_cache << std::endl;
+  if (yaw_cache < 0.05) {
+    std::cout << "this check makes edit teb return false (almost pure backword motion)" << std::endl;
+    return false;
+  }
+  if (idx > 1) {
+    // deletePoses exec pose_vec_.erase(pose_vec_.begin()+index, pose_vec_.begin()+index+number);
+    deletePoses(1, idx - 1);
+    deleteTimeDiffs(1, idx - 1);
+  }
+  if(idx < counter) {
+    deletePoses(2, counter - idx);
+    deleteTimeDiffs(2, counter - idx);
+  }
+  return true;
+}
 
+// dx = p1.x - p0.x; dy = p1.y - p0.y; theta = p0.theta
+double TimedElasticBand::currentOrientationToTransVectorDiff(double dx, double dy, double theta) {
+  double angle_pos_diff = atan2(dy, dx);
+  double angle_diff = g2o::normalize_theta(angle_pos_diff - theta);
+  return std::fabs(angle_diff);
+}
 
 } // namespace teb_local_planner

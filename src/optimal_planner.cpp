@@ -281,7 +281,10 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
   // now optimize
   double success = optimizeTEB(cfg_->optim.no_inner_iterations, cfg_->optim.no_outer_iterations);
   if (success && cfg_->trajectory.disable_backwards) {
-    teb_.repositionTEB();
+    if (!teb_.editTEB()) {
+      std::cout << "edit teb return false" << std::endl;
+      return false;
+    }
   }
   return success;
 }

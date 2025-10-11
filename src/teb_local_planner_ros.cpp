@@ -218,14 +218,17 @@ bool TebLocalPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& 
   global_plan_buffer_.swap(empty_buffer); // clear buffer
   //global_plan_ = orig_global_plan;
 
+  need_replan_ = false;
+  
+  double yaw_error_factor = 2.0;
   if (cfg_.trajectory.in_place_turn_to_start && orig_plan_size != 0) {
     geometry_msgs::PoseStamped robot_pose;
     costmap_ros_->getRobotPose(robot_pose);
     double current_yaw = tf::getYaw(robot_pose.pose.orientation);
     double start_yaw = tf::getYaw(orig_global_plan[0].pose.orientation);
     double yaw_diff = std::fabs(g2o::normalize_theta(current_yaw - start_yaw));
-    std::cout << "yaw diff between current and start: " << yaw_diff << std::endl;
-    if (yaw_diff > 2.0 * cfg_.goal_tolerance.yaw_goal_tolerance) {
+    std::cout << "yaw diff between current and first pose: " << yaw_diff << std::endl;
+    if (yaw_diff > yaw_error_factor * cfg_.goal_tolerance.yaw_goal_tolerance) {
       std::cout << "insert initial rotation" << std::endl;
       std::vector<geometry_msgs::PoseStamped> plan(1, orig_global_plan[0]);
       global_plan_buffer_.push(plan);
@@ -238,8 +241,8 @@ bool TebLocalPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& 
     double path_yaw = tf::getYaw(orig_global_plan[orig_plan_size - 2].pose.orientation);
     double goal_yaw = tf::getYaw(orig_global_plan[orig_plan_size - 1].pose.orientation);
     double yaw_diff = std::fabs(g2o::normalize_theta(path_yaw - goal_yaw));
-    std::cout << "yaw diff between goal and path_yaw: " << yaw_diff << std::endl;
-    if (yaw_diff > 2.0 * cfg_.goal_tolerance.yaw_goal_tolerance) {
+    std::cout << "yaw diff between goal and path extension direction: " << yaw_diff << std::endl;
+    if (yaw_diff > yaw_error_factor * cfg_.goal_tolerance.yaw_goal_tolerance) {
       global_plan_buffer_.back().back().pose.orientation = orig_global_plan[orig_plan_size - 2].pose.orientation;
       std::cout << "insert terminal rotation" << std::endl;
       std::vector<geometry_msgs::PoseStamped> plan(1, orig_global_plan[orig_plan_size - 1]);
@@ -250,6 +253,9 @@ bool TebLocalPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& 
   std::cout << "got global plan buffer size: " << global_plan_buffer_.size() << std::endl;
   global_plan_ = global_plan_buffer_.front();
   global_plan_buffer_.pop();
+
+  cfg_.autoChangeParameters(1.0);
+  last_decelerate_rate_ = 1.0;
 
   // we do not clear the local planner here, since setPlan is called frequently whenever the global planner updates the plan.
   // the local planner checks whether it is required to reinitialize the trajectory or not within each velocity computation step.  
@@ -330,18 +336,22 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   double dx = global_goal.pose.position.x - robot_pose_.x();
   double dy = global_goal.pose.position.y - robot_pose_.y();
   double delta_orient = g2o::normalize_theta( tf2::getYaw(global_goal.pose.orientation) - robot_pose_.theta() );
-  double dist_to_goal = fabs(std::sqrt(dx*dx+dy*dy));
-  double yaw_to_goal = fabs(delta_orient);
-  // std::cout << "dist to goal: " << dist_to_goal << " yaw to goal: " << yaw_to_goal << std::endl;
-  if((dist_to_goal < cfg_.goal_tolerance.xy_goal_tolerance || global_plan_.size() ==  1)
-    && yaw_to_goal < cfg_.goal_tolerance.yaw_goal_tolerance
+  // std::cout << "global plan size : " <<  global_plan_.size() << std::endl;
+  if((fabs(std::sqrt(dx*dx+dy*dy)) < cfg_.goal_tolerance.xy_goal_tolerance || global_plan_.size() == 1) // if global plan only contains a single pose (goal), ignore xy tolerance
+    && fabs(delta_orient) < cfg_.goal_tolerance.yaw_goal_tolerance
     && (!cfg_.goal_tolerance.complete_global_plan || via_points_.size() == 0)
     && (base_local_planner::stopped(base_odom, cfg_.goal_tolerance.theta_stopped_vel, cfg_.goal_tolerance.trans_stopped_vel)
         || cfg_.goal_tolerance.free_goal_vel))
   {
     if (!global_plan_buffer_.empty()) {
       global_plan_ = global_plan_buffer_.front();
-      std::cout << "load a new global plan with: " << global_plan_.size() << " poses" << std::endl;
+      tf2::doTransform(global_plan_.back(), global_goal, tf_plan_to_global);
+      dx = global_goal.pose.position.x - robot_pose_.x();
+      dy = global_goal.pose.position.y - robot_pose_.y();
+      delta_orient = g2o::normalize_theta( tf2::getYaw(global_goal.pose.orientation) - robot_pose_.theta() );
+      cfg_.autoChangeParameters(1.0);
+      last_decelerate_rate_ = 1.0;
+      std::cout << "load plan with: " << global_plan_.size() << " poses" << std::endl;
       global_plan_buffer_.pop();
     } else {
       goal_reached_ = true;
@@ -396,6 +406,11 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   // also consider custom obstacles (must be called after other updates, since the container is not cleared)
   updateObstacleContainerWithCustomObstacles();
   
+  // automatically adjust params for a humanoid performance
+  double decelerate_rate = 1.0;
+  double goal_rate = 1.0;
+  double obstacle_rate = 1.0;
+  double dist_to_goal = fabs(std::sqrt(dx*dx+dy*dy));
   double min_obs_dist = std::numeric_limits<double>::max();
   for (auto& obs : obstacles_) {
     double dist = obs->getMinimumDistance(robot_pose_.position());
@@ -405,14 +420,31 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   }
   double min_free_dist = min_obs_dist - robot_inscribed_radius_;
   //std::cout << "minimum free distance: " << min_free_dist  << std::endl;
+
+  if (dist_to_goal < 1.0) {
+    int molecular = std::ceil(dist_to_goal / 0.1);
+    goal_rate = static_cast<double>(molecular / 10.0);
+    goal_rate = goal_rate >= 0.25 ? goal_rate : 0.25;
+    // std::cout << "goal_rate: " << goal_rate  << std::endl;
+  }
+
   if (min_free_dist > 0.0 && min_free_dist < 1.0) {
     int molecular = std::ceil(min_free_dist / 0.1);
-    double rate = static_cast<double>(molecular / 10.0);
-    rate = rate >= 0.25 ? rate : 0.25;
-    //std::cout << "speed discount rate: " << rate  << std::endl;
-    cfg_.autoChangeParameters(rate);
-    //std::cout << "max vel x " << cfg_.robot.max_vel_x  << std::endl;
+    obstacle_rate = static_cast<double>(molecular / 10.0);
+    obstacle_rate = obstacle_rate >= 0.25 ? obstacle_rate : 0.25;
+    // std::cout << "obstacle_rate: " << obstacle_rate  << std::endl;
   }
+  decelerate_rate = std::min(goal_rate, obstacle_rate);
+
+  if (decelerate_rate != last_decelerate_rate_ and global_plan_.size() > 1) {
+    cfg_.autoChangeParameters(decelerate_rate);
+    last_decelerate_rate_ = decelerate_rate;
+  }
+
+  // std::cout << "max vel x: " << cfg_.robot.max_vel_x 
+  //           << ", max rot vel: " << cfg_.robot.max_vel_theta 
+  //           << "control look ahead poses: " << cfg_.trajectory.control_look_ahead_poses 
+  //           << "feasible check num poses: " << cfg_.trajectory.feasibility_check_no_poses << std::endl;
 
   // Do not allow config changes during the following optimization step
   boost::mutex::scoped_lock cfg_lock(cfg_.configMutex());
@@ -459,19 +491,20 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   if (!feasible)
   {
     cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
-    
-    // anti-oscillation around goal
-    double terminal_distance_tolerance = 1.0;
-    if (fabs(std::sqrt(dx*dx+dy*dy)) < terminal_distance_tolerance) {
-      std::cout << "dist to goal when the trajectory is not feasible: " << fabs(std::sqrt(dx*dx+dy*dy)) << std::endl;
-      message = "trajectory is not feasible around goal, stay cool";
-      return mbf_msgs::ExePathResult::NO_VALID_CMD;
-    }
 
-    // now we reset everything to start again with the initialization of new trajectories.
-    planner_->clearPlanner();
-    ROS_WARN("TebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
+    // simple way to anti-oscillation around goal; reset teb_ around goal(occupied) may cause repeatly motion and infeasible
     
+    // double reset_tolerance = 1.0;
+    // if (fabs(std::sqrt(dx*dx+dy*dy)) > reset_tolerance) {
+    //   // now we reset everything to start again with the initialization of new trajectories.
+    //   planner_->clearPlanner();
+    //   ROS_WARN("TebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
+    // } else {
+    //   message = "trajectory is not feasible around goal, stay cool";
+    //   std::cout << "trajectory is not feasible around goal, stay cool" << std::endl;
+    //   return mbf_msgs::ExePathResult::NO_VALID_CMD;;
+    // }
+
     ++no_infeasible_plans_; // increase number of infeasible solutions in a row
     time_last_infeasible_plan_ = ros::Time::now();
     last_cmd_ = cmd_vel.twist;
@@ -520,17 +553,8 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   // a feasible solution should be found, reset counter
   no_infeasible_plans_ = 0;
   
-  if (cfg_.trajectory.disable_backwards) {
-    // just eliminate negative linear velocity
-    if (cmd_vel.twist.linear.x < 0.0) {
-      //std::cout << "negative linear velocity: " << cmd_vel.twist.linear.x << std::endl;
-      cmd_vel.twist.linear.x = 0.0;
-    }
-  }
-
   // store last command (for recovery analysis etc.)
   last_cmd_ = cmd_vel.twist;
-  
   // Now visualize everything    
   planner_->visualize();
   visualization_->publishObstacles(obstacles_, costmap_->getResolution());
@@ -994,6 +1018,20 @@ void TebLocalPlannerROS::saturateVelocity(double& vx, double& vy, double& omega,
     vx *= max_vel_trans_ratio;
     vy *= max_vel_trans_ratio;
   }
+
+  // just eliminate negative linear velocity
+  if (cfg_.trajectory.disable_backwards) {
+    if (vx < 0.0) {
+      vx = 0.0;
+      // std::cout << "set linear vel to 0.0 (eliminate backwords motion)" << std::endl;
+    }
+  }
+  
+  // used at the start and terminal poses if enable turn in place
+  if ((cfg_.trajectory.in_place_turn_to_start or cfg_.trajectory.in_place_turn_to_goal) and global_plan_.size() == 1) {
+    vx = 0.0;
+    // std::cout << "set linear vel to 0.0 (global plan contains one pose)" << std::endl;
+  }
 }
      
      
@@ -1024,6 +1062,12 @@ void TebLocalPlannerROS::validateFootprints(double opt_inscribed_radius, double 
 void TebLocalPlannerROS::configureBackupModes(std::vector<geometry_msgs::PoseStamped>& transformed_plan,  int& goal_idx)
 {
     ros::Time current_time = ros::Time::now();
+
+    if (no_infeasible_plans_ > 19)
+    {
+      ROS_INFO("infeasible after recovery, set need replan to true");
+      need_replan_ = true;
+    }
     
     // reduced horizon backup mode
     if (cfg_.recovery.shrink_horizon_backup && 
@@ -1296,6 +1340,10 @@ double TebLocalPlannerROS::getNumberFromXMLRPC(XmlRpc::XmlRpcValue& value, const
 
 double TebLocalPlannerROS::calculateDirectionAngle(const geometry_msgs::PoseStamped& p_tail, const geometry_msgs::PoseStamped& p_head) {
   return std::atan2(p_head.pose.position.y - p_tail.pose.position.y, p_head.pose.position.x - p_tail.pose.position.x);
+}
+
+bool TebLocalPlannerROS::needReplan() {
+  return need_replan_;
 }
 
 } // end namespace teb_local_planner
