@@ -187,6 +187,8 @@ void TebLocalPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costm
     nh_move_base.param("controller_frequency", controller_frequency, controller_frequency);
     failure_detector_.setBufferLength(std::round(cfg_.recovery.oscillation_filter_duration*controller_frequency));
     
+    //create a collision checker
+    collision_checker_ = boost::make_shared<base_local_planner::CollisionChecker>(nh, *tf_, costmap_ros_);
     // set initialized flag
     initialized_ = true;
 
@@ -310,7 +312,21 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   
   // prune global plan to cut off parts of the past (spatially before the robot)
   pruneGlobalPlan(*tf_, robot_pose, global_plan_, cfg_.trajectory.global_plan_prune_distance);
-  
+      
+  // collision checker
+  std::vector<geometry_msgs::PoseStamped> local_plan;
+  for (int i = 0; i < 60 && i < global_plan_.size(); ++i) {
+    local_plan.push_back(global_plan_[i]);
+  }
+  nav_msgs::Path local_path;
+  local_path.header.frame_id = "map";
+  local_path.header.stamp = ros::Time::now();
+  local_path.poses = local_plan;
+  if (collision_checker_->pathOccupied(local_path)) {
+    cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
+    return false;
+  }
+
   // Transform global plan to the frame of interest (w.r.t. the local costmap)
   std::vector<geometry_msgs::PoseStamped> transformed_plan;
   int goal_idx;
@@ -448,7 +464,7 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
 
   // Do not allow config changes during the following optimization step
   boost::mutex::scoped_lock cfg_lock(cfg_.configMutex());
-    
+
   // Now perform the actual planning
   bool success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel);
 

@@ -80,6 +80,7 @@
 #include <boost/bind.hpp>
 #include <boost/shared_ptr.hpp>
 
+#include "base_local_planner/collision_checker.h"
 
 namespace teb_local_planner
 {
@@ -418,6 +419,8 @@ private:
   boost::shared_ptr<costmap_converter::BaseCostmapToPolygons> costmap_converter_; //!< Store the current costmap_converter  
 
   boost::shared_ptr< dynamic_reconfigure::Server<TebLocalPlannerReconfigureConfig> > dynamic_recfg_; //!< Dynamic reconfigure server to allow config modifications at runtime
+
+  boost::shared_ptr<base_local_planner::CollisionChecker> collision_checker_;
   ros::Subscriber custom_obst_sub_; //!< Subscriber for custom obstacles received via a ObstacleMsg.
   boost::mutex custom_obst_mutex_; //!< Mutex that locks the obstacle array (multi-threaded)
   costmap_converter::ObstacleArrayMsg custom_obstacle_msg_; //!< Copy of the most recent obstacle message
