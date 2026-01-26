@@ -313,20 +313,6 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   // prune global plan to cut off parts of the past (spatially before the robot)
   pruneGlobalPlan(*tf_, robot_pose, global_plan_, cfg_.trajectory.global_plan_prune_distance);
       
-  // collision checker
-  std::vector<geometry_msgs::PoseStamped> local_plan;
-  for (int i = 0; i < 60 && i < global_plan_.size(); ++i) {
-    local_plan.push_back(global_plan_[i]);
-  }
-  nav_msgs::Path local_path;
-  local_path.header.frame_id = "map";
-  local_path.header.stamp = ros::Time::now();
-  local_path.poses = local_plan;
-  if (collision_checker_->pathOccupied(local_path)) {
-    cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
-    return false;
-  }
-
   // Transform global plan to the frame of interest (w.r.t. the local costmap)
   std::vector<geometry_msgs::PoseStamped> transformed_plan;
   int goal_idx;
@@ -338,6 +324,17 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
     message = "Could not transform the global plan to the frame of the controller";
     return mbf_msgs::ExePathResult::INTERNAL_ERROR;
   }
+
+  // Collision checker
+  // nav_msgs::Path local_path;
+  // local_path.header.frame_id = "map";
+  // local_path.header.stamp = ros::Time::now();
+  // local_path.poses = transformed_plan;
+  // if (collision_checker_->pathOccupied(local_path)) {
+  //   cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
+  //   ROS_WARN("The transformed global plan is occupied");
+  //   return false;
+  // }
 
   // update via-points container
   if (!custom_via_points_active_)
@@ -939,9 +936,6 @@ bool TebLocalPlannerROS::transformGlobalPlan(const tf2_ros::Buffer& tf, const st
   return true;
 }
 
-    
-      
-      
 double TebLocalPlannerROS::estimateLocalGoalOrientation(const std::vector<geometry_msgs::PoseStamped>& global_plan, const geometry_msgs::PoseStamped& local_goal,
               int current_goal_idx, const geometry_msgs::TransformStamped& tf_plan_to_global, int moving_average_length) const
 {
@@ -1073,8 +1067,7 @@ void TebLocalPlannerROS::validateFootprints(double opt_inscribed_radius, double 
                   "Infeasible optimziation results might occur frequently!", opt_inscribed_radius, min_obst_dist, costmap_inscribed_radius);
 }
    
-   
-   
+
 void TebLocalPlannerROS::configureBackupModes(std::vector<geometry_msgs::PoseStamped>& transformed_plan,  int& goal_idx)
 {
     ros::Time current_time = ros::Time::now();
