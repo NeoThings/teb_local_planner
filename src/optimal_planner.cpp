@@ -1153,7 +1153,17 @@ bool TebOptimalPlanner::getVelocityCommand(double& vx, double& vy, double& omega
     omega = 0;
     return false;
   }
+  int rotation_pose_idx = 0;
+  for (; rotation_pose_idx + 1 < teb_.sizePoses(); ++rotation_pose_idx) {
+    Eigen::Vector2d delta = teb_.Pose(rotation_pose_idx+1).position() - teb_.Pose(rotation_pose_idx).position();
+    if (delta.norm() > 0.01) {
+      break;
+    }
+  }
   look_ahead_poses = std::max(1, std::min(look_ahead_poses, teb_.sizePoses() - 1 - cfg_->trajectory.prevent_look_ahead_poses_near_goal));
+  if (rotation_pose_idx > 0) {
+    look_ahead_poses = std::min(look_ahead_poses, rotation_pose_idx);
+  }
   double dt = 0.0;
   for(int counter = 0; counter < look_ahead_poses; ++counter)
   {

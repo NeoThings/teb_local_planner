@@ -646,7 +646,7 @@ bool TimedElasticBand::editTEB() {
         dy = pose_vec_[i]->position().y() - pose_vec_[0]->position().y();
         // edit the trajectory
         if (currentOrientationToTransVectorDiff(dx, dy, pose_vec_[0]->theta()) > M_PI/2.0) {
-          counter++; // counter = i
+          counter++;
           pose_vec_[i]->position().x() = pose_vec_[0]->position().x();
           pose_vec_[i]->position().y() = pose_vec_[0]->position().y();
         } else {
