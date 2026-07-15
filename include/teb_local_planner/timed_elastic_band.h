@@ -45,7 +45,6 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseArray.h>
 #include <tf/tf.h>
-#include <tf2/utils.h>
 
 #include <complex>
 #include <iterator>

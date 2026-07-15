@@ -127,8 +127,6 @@ public:
    * @param teb const reference to a Timed_Elastic_Band
    */
   void publishLocalPlanAndPoses(const TimedElasticBand& teb) const;
-
-  void publishInitPoses(const TimedElasticBand& teb) const;
   
   /**
    * @brief Publish the visualization of the robot model
@@ -261,7 +259,6 @@ protected:
   ros::Publisher global_plan_pub_; //!< Publisher for the global plan
   ros::Publisher local_plan_pub_; //!< Publisher for the local plan
   ros::Publisher teb_poses_pub_; //!< Publisher for the trajectory pose sequence
-  ros::Publisher init_poses_pub_; //!< Publisher for the trajectory pose after initilize
   ros::Publisher teb_marker_pub_; //!< Publisher for visualization markers
   ros::Publisher feedback_pub_; //!< Publisher for the feedback message for analysis and debug purposes
   

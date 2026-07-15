@@ -231,15 +231,6 @@ public:
     int divergence_detection_max_chi_squared; //!< Maximum acceptable Mahalanobis distance above which it is assumed that the optimization diverged.
   } recovery; //!< Parameters related to recovery and backup strategies
 
-  struct AutoParams
-  {
-    double max_linear_vel;
-    double max_linear_acc;
-    double max_angular_vel;
-    double max_angular_acc;
-    int control_poses;
-    int feasibility_poses;
-  } auto_params;
 
   /**
   * @brief Construct the TebConfig using default values.
@@ -438,8 +429,6 @@ public:
    * @brief Return the internal config mutex
    */
   boost::mutex& configMutex() {return config_mutex_;}
-
-  void autoChangeParameters(double rate);
 
 private:
   boost::mutex config_mutex_; //!< Mutex for config accesses and changes

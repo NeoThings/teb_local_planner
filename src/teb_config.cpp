@@ -181,13 +181,6 @@ void TebConfig::loadRosParamFromNodeHandle(const ros::NodeHandle& nh)
   nh.param("divergence_detection", recovery.divergence_detection_enable, recovery.divergence_detection_enable);
   nh.param("divergence_detection_max_chi_squared", recovery.divergence_detection_max_chi_squared, recovery.divergence_detection_max_chi_squared);
 
-  auto_params.max_linear_vel = robot.max_vel_x;
-  auto_params.max_linear_acc = robot.acc_lim_x;
-  auto_params.max_angular_vel = robot.max_vel_theta;
-  auto_params.max_angular_acc = robot.acc_lim_theta;
-  auto_params.control_poses = trajectory.control_look_ahead_poses;
-  auto_params.feasibility_poses = trajectory.feasibility_check_no_poses;
-
   checkParameters();
   checkDeprecated(nh);
 }
@@ -195,15 +188,7 @@ void TebConfig::loadRosParamFromNodeHandle(const ros::NodeHandle& nh)
 void TebConfig::reconfigure(TebLocalPlannerReconfigureConfig& cfg)
 { 
   boost::mutex::scoped_lock l(config_mutex_);
-  
-  // AutoParams
-  auto_params.max_linear_vel = cfg.max_vel_x;
-  auto_params.max_linear_acc = cfg.acc_lim_x;
-  auto_params.max_angular_vel = cfg.max_vel_theta;
-  auto_params.max_angular_acc = cfg.acc_lim_theta;
-  auto_params.control_poses = cfg.control_look_ahead_poses;
-  auto_params.feasibility_poses = cfg.feasibility_check_no_poses;
-  
+
   // Trajectory
   trajectory.teb_autosize = cfg.teb_autosize;
   trajectory.dt_ref = cfg.dt_ref;
@@ -324,17 +309,6 @@ void TebConfig::reconfigure(TebLocalPlannerReconfigureConfig& cfg)
   checkParameters();
 }
 
-void TebConfig::autoChangeParameters(double rate) 
-{
-  robot.max_vel_x = rate * auto_params.max_linear_vel;
-  robot.acc_lim_x = rate * auto_params.max_linear_acc;
-  robot.max_vel_theta = rate * auto_params.max_angular_vel;
-  robot.acc_lim_theta =  rate * auto_params.max_angular_acc;
-  trajectory.control_look_ahead_poses = std::floor(rate * auto_params.control_poses);
-  trajectory.control_look_ahead_poses = std::max(trajectory.control_look_ahead_poses, 1); // at least 1 poses
-  // trajectory.feasibility_check_no_poses = std::floor(rate * auto_params.feasibility_poses);
-  // trajectory.feasibility_check_no_poses = std::max(trajectory.feasibility_check_no_poses, 2); // at least 2 poses
-}
     
 void TebConfig::checkParameters() const
 {

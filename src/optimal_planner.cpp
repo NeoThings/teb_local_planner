@@ -245,13 +245,12 @@ void TebOptimalPlanner::setVelocityGoal(const geometry_msgs::Twist& vel_goal)
 }
 
 bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& initial_plan, const geometry_msgs::Twist* start_vel, bool free_goal_vel)
-{  
+{
   ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
   if (!teb_.isInit())
   {
     teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
-                              cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
-    visualization_->publishInitPoses(teb_);
+      cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
   }
   else // warm start
   {
@@ -267,10 +266,8 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
       teb_.clearTimedElasticBand();
       teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
         cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
-      visualization_->publishInitPoses(teb_);
     }
   }
-
   if (start_vel)
     setVelocityStart(*start_vel);
   if (free_goal_vel)
@@ -1327,4 +1324,5 @@ bool TebOptimalPlanner::isTrajectoryFeasible(base_local_planner::CostmapModel* c
   }
   return true;
 }
+
 } // namespace teb_local_planner

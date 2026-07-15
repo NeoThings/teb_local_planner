@@ -156,7 +156,7 @@ void TimedElasticBand::deletePoses(int index, int number)
   ROS_ASSERT(index+number<=(int)pose_vec_.size());
   // set min_sample less than 3 error may occur without return sentence
   if (pose_vec_.size() == index+number) {
-    ROS_WARN("delete num(%d), reached to pose vec limit, current pose vec size: %d", number, (int)pose_vec_.size());
+    ROS_DEBUG("delete num(%d), reached to pose vec limit, current pose vec size: %d", number, (int)pose_vec_.size());
     return;
   }
   for (int i = index; i<index+number; ++i)
@@ -176,7 +176,7 @@ void TimedElasticBand::deleteTimeDiffs(int index, int number)
   ROS_ASSERT(index+number<=timediff_vec_.size());
   // set min_sample less than 3 error may occur without return sentence
   if (timediff_vec_.size() < index+number) {
-    ROS_WARN("delete num(%d), reached to time vec limit, current time vec size: %d", number, (int)timediff_vec_.size());
+    ROS_DEBUG("delete num(%d), reached to time vec limit, current time vec size: %d", number, (int)timediff_vec_.size());
     return;
   }
   for (int i = index; i<index+number; ++i)
@@ -396,8 +396,7 @@ bool TimedElasticBand::initTrajectoryToGoal(const PoseSE2& start, const PoseSE2&
 }
 
 
-bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::PoseStamped>& plan, double max_vel_x, double max_vel_theta, bool estimate_orient, 
-                                            int min_samples, bool guess_backwards_motion)
+bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::PoseStamped>& plan, double max_vel_x, double max_vel_theta, bool estimate_orient, int min_samples, bool guess_backwards_motion)
 {
   
   if (!isInit())
@@ -567,6 +566,7 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
 {
   // first and simple approach: change only start confs (and virtual start conf for inital velocity)
   // TEST if optimizer can handle this "hard" placement
+
   if (new_start && sizePoses()>0)
   {    
     // find nearest state (using l2-norm) in order to prune the trajectory
@@ -574,6 +574,7 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
     double dist_cache = (new_start->position()- Pose(0).position()).norm();
     double dist;
     int lookahead = std::min<int>( sizePoses()-min_samples, 10); // satisfy min_samples, otherwise max 10 samples
+
     int nearest_idx = 0;
     for (int i = 1; i<=lookahead; ++i)
     {
@@ -585,6 +586,7 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
       }
       else break;
     }
+
     // prune trajectory at the beginning (and extrapolate sequences at the end if the horizon is fixed)
     if (nearest_idx>0)
     {
@@ -593,14 +595,17 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
       deletePoses(1, nearest_idx);  // delete first states such that the closest state is the new first one
       deleteTimeDiffs(1, nearest_idx); // delete corresponding time differences
     }
+
     // update start
     Pose(0) = *new_start;
   }
+
   if (new_goal && sizePoses()>0)
   {
     BackPose() = *new_goal;
   }
 };
+
 
 bool TimedElasticBand::isTrajectoryInsideRegion(double radius, double max_dist_behind_robot, int skip_poses)
 {
@@ -634,11 +639,11 @@ bool TimedElasticBand::isTrajectoryInsideRegion(double radius, double max_dist_b
 }
 
 bool TimedElasticBand::editTEB() {
-  if (sizePoses()>=2){ 
+  if (sizePoses()>=2){
     double dx = pose_vec_[1]->position().x() - pose_vec_[0]->position().x();
     double dy = pose_vec_[1]->position().y() - pose_vec_[0]->position().y();
     int counter = 0;
-    auto last_pose = pose_vec_[1];
+    // currentOrientationToTransVectorDiff used to detemine if the next pose is behind the robot
     if (currentOrientationToTransVectorDiff(dx, dy, pose_vec_[0]->theta()) > M_PI/2.0 && std::sqrt(dx*dx + dy*dy) > 0.025) {
       // std::cout << "detected the next pose behind" << std::endl;
       for (int i = 1; i < pose_vec_.size(); ++i) {
@@ -650,15 +655,23 @@ bool TimedElasticBand::editTEB() {
           pose_vec_[i]->position().x() = pose_vec_[0]->position().x();
           pose_vec_[i]->position().y() = pose_vec_[0]->position().y();
         } else {
-          std::cout << "repositioned " << counter << " poses to the robot pose" << std::endl;
+          ROS_DEBUG("repositioned %d poses to the robot pose", counter);
           return deleteToAndFroPoses(counter);
         }
+        if (g2o::normalize_theta(pose_vec_[i]->theta() - pose_vec_[0]->theta()) > 3.0*M_PI/2.0 or std::sqrt(dx*dx + dy*dy) > 0.5) {
+          ROS_DEBUG("exit edit TEB traj, yaw diff: %f, distance: %f, current count: %d", 
+                            g2o::normalize_theta(pose_vec_[i]->theta() - pose_vec_[0]->theta()), 
+                            std::sqrt(dx*dx + dy*dy), counter);
+          break;
+        }
       }
-      std::cout << "all the rest of poses are behind, " << "repositioned " << counter << " poses to the robot pose" << std::endl;
+      ROS_DEBUG("all the rest of poses are behind, repositioned %d poses to the robot pose", counter);
       return deleteToAndFroPoses(counter);
+      return true;
     }
     return true;
   }
+  return false;
 }
 
 bool TimedElasticBand::deleteToAndFroPoses(int counter) {
@@ -672,9 +685,9 @@ bool TimedElasticBand::deleteToAndFroPoses(int counter) {
       idx = j;
     }
   }
-  std::cout << "max yaw diff idx: " << idx << " max yaw diff: " << yaw_cache << std::endl;
+  // std::cout << "max yaw diff idx: " << idx << " max yaw diff: " << yaw_cache << std::endl;
   if (yaw_cache < 0.05) {
-    std::cout << "this check makes edit teb return false (almost pure backword motion)" << std::endl;
+    ROS_INFO_THROTTLE(5.0, "edit teb failed with no backward motion allowed (almost pure backword motion generated)");
     return false;
   }
   if (idx > 1) {

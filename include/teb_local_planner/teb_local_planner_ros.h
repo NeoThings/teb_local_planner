@@ -77,10 +77,9 @@
 #include <dynamic_reconfigure/server.h>
 
 // boost classes
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/shared_ptr.hpp>
 
-#include "base_local_planner/collision_checker.h"
 
 namespace teb_local_planner
 {
@@ -389,9 +388,10 @@ protected:
    */
   void validateFootprints(double opt_inscribed_radius, double costmap_inscribed_radius, double min_obst_dist);
   
+
   void configureBackupModes(std::vector<geometry_msgs::PoseStamped>& transformed_plan,  int& goal_idx);
 
-  double calculateDirectionAngle(const geometry_msgs::PoseStamped& p_tail, const geometry_msgs::PoseStamped& p_head);
+
 
 private:
   // Definition of member variables
@@ -419,8 +419,6 @@ private:
   boost::shared_ptr<costmap_converter::BaseCostmapToPolygons> costmap_converter_; //!< Store the current costmap_converter  
 
   boost::shared_ptr< dynamic_reconfigure::Server<TebLocalPlannerReconfigureConfig> > dynamic_recfg_; //!< Dynamic reconfigure server to allow config modifications at runtime
-
-  boost::shared_ptr<base_local_planner::CollisionChecker> collision_checker_;
   ros::Subscriber custom_obst_sub_; //!< Subscriber for custom obstacles received via a ObstacleMsg.
   boost::mutex custom_obst_mutex_; //!< Mutex that locks the obstacle array (multi-threaded)
   costmap_converter::ObstacleArrayMsg custom_obstacle_msg_; //!< Copy of the most recent obstacle message
@@ -451,8 +449,6 @@ private:
   bool initialized_; //!< Keeps track about the correct initialization of this class
 
   bool need_replan_; //!< Set to true if the local planner need a new global plan
-
-  double last_decelerate_rate_;
 
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
