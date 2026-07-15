@@ -1,10 +1,13 @@
 cmake_minimum_required(VERSION 3.1)
 project(teb_local_planner)
 
-if(NOT DEFINED CMAKE_BUILD_TYPE)
+if(NOT DEFINED CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
   # Set to Release in order to speed up the program significantly
-  set(CMAKE_BUILD_TYPE Release) #None, Debug, Release, RelWithDebInfo, MinSizeRel
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
+
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+  "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
 
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS
